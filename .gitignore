@@ -1,0 +1,9 @@
+.env
+rag-chatbot/.env
+.DS_Store
+__pycache__/
+*.pyc
+*.pyc.save
+node_modules/
+my-react-chat/node_modules/
+faiss_index/

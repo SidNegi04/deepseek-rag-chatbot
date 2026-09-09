@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+
+langchain
+langchain-core
+langchain-community
+langchain-huggingface
+langchain-text-splitters
+langgraph
+
+faiss-cpu
+pypdf
+ddgs
