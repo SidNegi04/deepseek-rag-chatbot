@@ -148,7 +148,7 @@ def build_agent(tools):
     llm = ChatOpenAI(
         model=OPENROUTER_MODEL,
         temperature=0.1,
-        max_tokens=512,
+        max_tokens=1536,
         base_url="https://openrouter.ai/api/v1",
         api_key=os.environ["OPENROUTER_API_KEY"],
     )

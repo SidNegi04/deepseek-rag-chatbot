@@ -13,11 +13,17 @@ function App() {
   const [files, setFiles] = useState([]);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
   const scrollRef = useRef(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, loading]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   const sendMessage = async () => {
     if (!input.trim()) return;
@@ -62,10 +68,21 @@ function App() {
 
       <main className="chat-panel">
         <header className="chat-header">
-          <span className="chat-title">AI Chat</span>
-          <span className="chat-subtitle">Documents · Web search · Calculator</span>
+          <div>
+            <span className="chat-title">AI Chat</span>
+            <span className="chat-subtitle">Documents · Web search · Calculator</span>
+          </div>
+          <select
+            className="theme-select"
+            value={theme}
+            onChange={(e) => setTheme(e.target.value)}
+          >
+            <option value="light">☀️ Light</option>
+            <option value="dark">🌙 Dark</option>
+            <option value="ocean">🌊 Ocean</option>
+            <option value="sunset">🌅 Sunset</option>
+          </select>
         </header>
-
         <div className="chat-scroll" ref={scrollRef}>
           {messages.map((m, i) => (
             <div key={i} className={`bubble-row ${m.sender}`}>
