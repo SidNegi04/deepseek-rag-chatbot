@@ -123,7 +123,7 @@ def _robust_parse(text: str, retries: int):
 
     final_match = _FINAL_RE.search(text)
     if final_match:
-        answer = final_match.group(1).strip().split("\n\n")[0].strip()
+        answer = final_match.group(1).strip()
         return AgentFinish(return_values={"output": answer}, log=text)
 
     action_match = _ACTION_RE.search(text)
