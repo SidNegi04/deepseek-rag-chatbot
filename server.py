@@ -25,15 +25,25 @@ app.add_middleware(
 )
 
 _agent_app = None
+__agent_app = None
+_agent_app_had_index = False
 _chat_history = []  # simple single-session memory: list of (speaker, text)
 
 
 def get_agent_app():
-    global _agent_app
-    if _agent_app is None:
+    global _agent_app, _agent_app_had_index
+    # Rebuild not just when unset, but whenever the on-disk index's
+    # existence has changed since we last built the agent. This covers
+    # the case where the server started up (or last rebuilt) before any
+    # documents were indexed: without this check, search_internal_documents
+    # would be permanently missing from the cached agent's toolset until
+    # the next explicit /api/reindex call, even after an index appears.
+    index_now = index_exists()
+    if _agent_app is None or index_now != _agent_app_had_index:
         vectorstore = load_vectorstore()
         tools = get_tools(vectorstore)
         _agent_app = build_agent(tools)
+        _agent_app_had_index = index_now
     return _agent_app
 
 
