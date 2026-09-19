@@ -3,7 +3,7 @@ import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import './App.css';
 
-const API_BASE = 'https://nyx-chatbot-h9f7.onrender.com';
+const API_BASE = 'https://deepseek-rag-chatbot.onrender.com';
 
 function App() {
   const [messages, setMessages] = useState([
