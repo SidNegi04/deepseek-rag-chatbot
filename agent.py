@@ -52,6 +52,12 @@ Rules:
   first if you don't already know the exact table/column names, then
   query_f1_database with a single SELECT statement.
 - Only use tools when you actually need them; answer directly if you already know.
+- If search_internal_documents returns an Observation containing document
+  excerpts (text under a "(source: ...)" heading), you MUST base your
+  Final Answer on that returned content. Do NOT claim no documents were
+  found, and do NOT say the search returned nothing, if the Observation
+  actually contains excerpts — treat that Observation as ground truth,
+  not your own prior guess about what the search might return.nly use tools when you actually need them; answer directly if you already know.
 - Be concise and cite which source (document or web) your answer came from
   when relevant.
 - Give EXACTLY ONE of: an Action, OR a Final Answer. Never both in the same response.
