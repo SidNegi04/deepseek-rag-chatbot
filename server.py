@@ -56,11 +56,31 @@ class ChatRequest(BaseModel):
 # loop. If this were `async def`, that blocking work would freeze
 # Uvicorn's single event loop entirely, stalling every other request
 # (including /api/status) until it finished.
+def _looks_truncated(text: str) -> bool:
+    """Heuristic: does this look like it was cut off mid-thought?
+    Free-tier models sometimes stop early without hitting any token
+    cap. A reply that doesn't end in normal closing punctuation is a
+    good signal it trailed off (e.g. ends in ':', ',', or a bare word)."""
+    stripped = text.rstrip()
+    if not stripped:
+        return True
+    return stripped[-1] not in ".!?\"')]}`"
+
+
 @app.post("/api/chat")
 def chat(request: ChatRequest):
     global _chat_history
     app_graph = get_agent_app()
     reply, updated_history = run_turn(app_graph, request.message, _chat_history)
+
+    if _looks_truncated(reply):
+        # One retry: free-tier models occasionally stop early with no
+        # error and no token-cap hit, so a fresh attempt at the same
+        # turn is the simplest recovery.
+        retry_reply, retry_history = run_turn(app_graph, request.message, _chat_history)
+        if not _looks_truncated(retry_reply):
+            reply, updated_history = retry_reply, retry_history
+
     _chat_history = updated_history
     return {"response": reply}
 
