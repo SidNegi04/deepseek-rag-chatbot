@@ -58,11 +58,11 @@ def build_vectorstore():
 
 
 def load_vectorstore():
-    if not INDEX_DIR.exists():
+    if not (INDEX_DIR / "index.faiss").exists():
         return None
     embeddings = _get_embeddings()
     return FAISS.load_local(str(INDEX_DIR), embeddings, allow_dangerous_deserialization=True)
 
 
 def index_exists():
-    return INDEX_DIR.exists()
+    return (INDEX_DIR / "index.faiss").exists()
