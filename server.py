@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from rag import build_vectorstore, load_vectorstore, index_exists, DOCS_DIR
-from tools import get_tools, F1DB_PATH
+from tools import get_tools, F1DB_PATH, list_databases, DATABASES_DIR
 from agent import build_agent, run_turn
 
 app = FastAPI()
@@ -25,25 +25,27 @@ app.add_middleware(
 )
 
 _agent_app = None
-__agent_app = None
 _agent_app_had_index = False
+_agent_app_db_id = None
 _chat_history = []  # simple single-session memory: list of (speaker, text)
 
 
-def get_agent_app():
-    global _agent_app, _agent_app_had_index
-    # Rebuild not just when unset, but whenever the on-disk index's
-    # existence has changed since we last built the agent. This covers
-    # the case where the server started up (or last rebuilt) before any
-    # documents were indexed: without this check, search_internal_documents
-    # would be permanently missing from the cached agent's toolset until
-    # the next explicit /api/reindex call, even after an index appears.
+def get_agent_app(db_id: str = "f1"):
+    global _agent_app, _agent_app_had_index, _agent_app_db_id
+    # Rebuild whenever unset, whenever the on-disk index's existence has
+    # changed since we last built the agent (see note below), or whenever
+    # the selected database has changed since the last build.
     index_now = index_exists()
-    if _agent_app is None or index_now != _agent_app_had_index:
+    if (
+        _agent_app is None
+        or index_now != _agent_app_had_index
+        or db_id != _agent_app_db_id
+    ):
         vectorstore = load_vectorstore()
-        tools = get_tools(vectorstore)
+        tools = get_tools(vectorstore, db_id=db_id)
         _agent_app = build_agent(tools)
         _agent_app_had_index = index_now
+        _agent_app_db_id = db_id
     return _agent_app
 
 
@@ -57,6 +59,7 @@ def startup_event():
 
 class ChatRequest(BaseModel):
     message: str
+    db_id: str = "f1"
 
 
 # NOTE: this route is a plain `def`, not `async def`, on purpose.
@@ -80,7 +83,7 @@ def _looks_truncated(text: str) -> bool:
 @app.post("/api/chat")
 def chat(request: ChatRequest):
     global _chat_history
-    app_graph = get_agent_app()
+    app_graph = get_agent_app(db_id=request.db_id)
     reply, updated_history = run_turn(app_graph, request.message, _chat_history)
 
     if _looks_truncated(reply):
@@ -115,6 +118,22 @@ def reindex():
     n_chunks = build_vectorstore()
     _agent_app = None
     return {"chunks_indexed": n_chunks}
+
+
+@app.get("/api/databases")
+def databases():
+    return {"databases": list_databases()}
+
+
+@app.post("/api/databases/upload")
+async def upload_database(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith((".sqlite", ".db")):
+        return {"error": "Only .sqlite or .db files are supported."}
+    DATABASES_DIR.mkdir(exist_ok=True)
+    dest = DATABASES_DIR / file.filename
+    with open(dest, "wb") as out:
+        out.write(await file.read())
+    return {"saved": file.filename, "databases": list_databases()}
 
 
 @app.post("/api/reset")

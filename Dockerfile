@@ -12,7 +12,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY rag.py tools.py agent.py server.py ./
-RUN mkdir -p docs faiss_index
+RUN mkdir -p docs faiss_index databases
 
 # Pull the latest F1DB SQLite database (https://github.com/f1db/f1db) so
 # query_f1_database has data to query. Re-run the build to pick up a newer
