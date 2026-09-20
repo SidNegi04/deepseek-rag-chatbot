@@ -228,3 +228,17 @@ body {
   width: 260px;
   flex-shrink: 0;
 }
+.login-shell {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.login-card {
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}

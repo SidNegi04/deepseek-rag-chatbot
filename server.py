@@ -5,10 +5,11 @@ to the React frontend over HTTP.
 import os
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from auth import get_current_user
 from rag import build_vectorstore, load_vectorstore, index_exists, DOCS_DIR
 from tools import get_tools, F1DB_PATH, list_databases, DATABASES_DIR
 from agent import build_agent, run_turn
@@ -27,7 +28,7 @@ app.add_middleware(
 _agent_app = None
 _agent_app_had_index = False
 _agent_app_db_id = None
-_chat_history = []  # simple single-session memory: list of (speaker, text)
+_chat_histories = {}  # per-user memory: uid -> list of (speaker, text)
 
 
 def get_agent_app(db_id: str = "f1"):
@@ -81,25 +82,26 @@ def _looks_truncated(text: str) -> bool:
 
 
 @app.post("/api/chat")
-def chat(request: ChatRequest):
-    global _chat_history
+def chat(request: ChatRequest, user=Depends(get_current_user)):
+    uid = user["uid"]
+    history = _chat_histories.get(uid, [])
     app_graph = get_agent_app(db_id=request.db_id)
-    reply, updated_history = run_turn(app_graph, request.message, _chat_history)
+    reply, updated_history = run_turn(app_graph, request.message, history)
 
     if _looks_truncated(reply):
         # One retry: free-tier models occasionally stop early with no
         # error and no token-cap hit, so a fresh attempt at the same
         # turn is the simplest recovery.
-        retry_reply, retry_history = run_turn(app_graph, request.message, _chat_history)
+        retry_reply, retry_history = run_turn(app_graph, request.message, history)
         if not _looks_truncated(retry_reply):
             reply, updated_history = retry_reply, retry_history
 
-    _chat_history = updated_history
+    _chat_histories[uid] = updated_history
     return {"response": reply}
 
 
 @app.post("/api/upload")
-async def upload(files: list[UploadFile] = File(...)):
+async def upload(files: list[UploadFile] = File(...), user=Depends(get_current_user)):
     DOCS_DIR.mkdir(exist_ok=True)
     saved = []
     for f in files:
@@ -113,7 +115,7 @@ async def upload(files: list[UploadFile] = File(...)):
 # Also sync, for the same reason as /api/chat: build_vectorstore() does
 # blocking embedding/FAISS work.
 @app.post("/api/reindex")
-def reindex():
+def reindex(user=Depends(get_current_user)):
     global _agent_app
     n_chunks = build_vectorstore()
     _agent_app = None
@@ -121,12 +123,12 @@ def reindex():
 
 
 @app.get("/api/databases")
-def databases():
+def databases(user=Depends(get_current_user)):
     return {"databases": list_databases()}
 
 
 @app.post("/api/databases/upload")
-async def upload_database(file: UploadFile = File(...)):
+async def upload_database(file: UploadFile = File(...), user=Depends(get_current_user)):
     if not file.filename.lower().endswith((".sqlite", ".db")):
         return {"error": "Only .sqlite or .db files are supported."}
     DATABASES_DIR.mkdir(exist_ok=True)
@@ -137,9 +139,8 @@ async def upload_database(file: UploadFile = File(...)):
 
 
 @app.post("/api/reset")
-async def reset_history():
-    global _chat_history
-    _chat_history = []
+async def reset_history(user=Depends(get_current_user)):
+    _chat_histories.pop(user["uid"], None)
     return {"status": "cleared"}
 
 

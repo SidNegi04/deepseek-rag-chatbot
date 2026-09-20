@@ -30,7 +30,7 @@ from langgraph.graph import StateGraph, END
 # The free DeepSeek-R1 variant on OpenRouter. OpenRouter occasionally
 # rotates which models are free - override with OPENROUTER_MODEL if this
 # one disappears (check https://openrouter.ai/models?max_price=0).
-OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1-0528:free")
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1-0528")
 
 REACT_PROMPT = PromptTemplate.from_template(
     """You are a helpful assistant with access to the user's internal documents

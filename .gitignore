@@ -7,3 +7,4 @@ __pycache__/
 node_modules/
 my-react-chat/node_modules/
 faiss_index/
+server.py.bak

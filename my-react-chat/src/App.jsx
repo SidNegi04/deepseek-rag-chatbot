@@ -2,8 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import './App.css';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from './firebase';
+import Login from './Login';
 
-const API_BASE = 'https://deepseek-rag-chatbot.onrender.com';
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://deepseek-rag-chatbot.onrender.com';
 
 function App() {
   const [messages, setMessages] = useState([
@@ -19,6 +22,8 @@ function App() {
   const [dbFile, setDbFile] = useState(null);
   const [dbStatus, setDbStatus] = useState('');
   const scrollRef = useRef(null);
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -30,10 +35,18 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
+    return onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthReady(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
     axios.get(`${API_BASE}/api/databases`).then((res) => {
       setDatabases(res.data.databases);
     }).catch(() => {});
-  }, []);
+  }, [user]);
 
   const sendMessage = async () => {
     if (!input.trim()) return;
@@ -75,6 +88,9 @@ function App() {
     setSelectedDb(res.data.saved.replace(/\.(sqlite|db)$/i, ''));
     setDbStatus(`Added ${res.data.saved}.`);
   };
+
+  if (!authReady) return <p style={{ padding: 20 }}>Loading auth…</p>;
+  if (!user) return <Login />;
 
   return (
     <div className="app-shell">
@@ -122,16 +138,19 @@ function App() {
             <span className="chat-title">AI Chat</span>
             <span className="chat-subtitle">Documents · Web search · Calculator</span>
           </div>
-          <select
-            className="theme-select"
-            value={theme}
-            onChange={(e) => setTheme(e.target.value)}
-          >
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-            <option value="ocean">Ocean</option>
-            <option value="sunset">Sunset</option>
-          </select>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select
+              className="theme-select"
+              value={theme}
+              onChange={(e) => setTheme(e.target.value)}
+            >
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+              <option value="ocean">Ocean</option>
+              <option value="sunset">Sunset</option>
+            </select>
+            <button className="btn-primary" onClick={() => signOut(auth)}>Sign out</button>
+          </div>
         </header>
         <div className="chat-scroll" ref={scrollRef}>
           {messages.map((m, i) => (
