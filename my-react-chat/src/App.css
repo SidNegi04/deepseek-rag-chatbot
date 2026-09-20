@@ -67,8 +67,6 @@ body {
 }
 
 .sidebar {
-  width: 260px;
-  flex-shrink: 0;
   background: var(--bg-panel);
   border-radius: 16px;
   padding: 20px;
@@ -221,4 +219,12 @@ body {
   color: var(--text-primary);
   font-size: 13px;
   cursor: pointer;
+}
+
+.sidebar-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 260px;
+  flex-shrink: 0;
 }
