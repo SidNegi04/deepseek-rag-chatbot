@@ -14,7 +14,11 @@ function App() {
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
-  const scrollRef = useRef(null);
+  const scrollRef = useRef(null); 
+  const [databases, setDatabases] = useState([]);
+  const [selectedDb, setSelectedDb] = useState('f1');
+  const [dbFile, setDbFile] = useState(null);
+  const [dbStatus, setDbStatus] = useState('');
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -25,6 +29,11 @@ function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  useEffect(() => {
+    axios.get(`${API_BASE}/api/databases`).then((res) => {
+      setDatabases(res.data.databases);
+    }).catch(() => {});
+  }, []);
   const sendMessage = async () => {
     if (!input.trim()) return;
     const newMessages = [...messages, { text: input, sender: 'user' }];
@@ -32,7 +41,7 @@ function App() {
     setInput('');
     setLoading(true);
     try {
-      const res = await axios.post(`${API_BASE}/api/chat`, { message: input });
+            const res = await axios.post(`${API_BASE}/api/chat`, { message: input, db_id: selectedDb });
       setMessages([...newMessages, { text: res.data.response, sender: 'bot' }]);
     } catch (e) {
       setMessages([...newMessages, { text: "Error connecting to server.", sender: 'bot' }]);
@@ -51,6 +60,21 @@ function App() {
     setStatus(`Indexed ${res.data.chunks_indexed} chunks.`);
   };
 
+  const uploadDatabase = async () => {
+    if (!dbFile) return;
+    const formData = new FormData();
+    formData.append('file', dbFile);
+    setDbStatus('Uploading...');
+    const res = await axios.post(`${API_BASE}/api/databases/upload`, formData);
+    if (res.data.error) {
+      setDbStatus(res.data.error);
+      return;
+    }
+    setDatabases(res.data.databases);
+    setSelectedDb(res.data.saved.replace(/\.(sqlite|db)$/i, ''));
+    setDbStatus(`Added ${res.data.saved}.`);
+  };
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -64,6 +88,29 @@ function App() {
 
         <button className="btn-primary" onClick={uploadFiles}>Upload &amp; Re-index</button>
         {status && <p className="status-text">{status}</p>}
+      </aside>
+
+      <aside className="sidebar">
+        <h2 className="sidebar-title">Databases</h2>
+        <p className="sidebar-hint">Select a database to query, or upload a new one.</p>
+
+        <select
+          className="theme-select"
+          value={selectedDb}
+          onChange={(e) => setSelectedDb(e.target.value)}
+        >
+          {databases.map((db) => (
+            <option key={db.id} value={db.id}>{db.name}</option>
+          ))}
+        </select>
+
+        <label className="file-input">
+          <input type="file" accept=".sqlite,.db" onChange={(e) => setDbFile(e.target.files[0])} />
+          {dbFile ? dbFile.name : 'Choose a database file'}
+        </label>
+
+        <button className="btn-primary" onClick={uploadDatabase}>Upload Database</button>
+        {dbStatus && <p className="status-text">{dbStatus}</p>}
       </aside>
 
       <main className="chat-panel">
