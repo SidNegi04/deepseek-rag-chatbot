@@ -46,9 +46,9 @@ Rules:
 - For ANY question about today's date or the current day, you MUST use
   get_current_date. Do NOT use web_search for this, and do NOT answer from
   memory. Use web_search for current weather or current events instead.
-- For questions that require looking up structured data (e.g. Formula 1
-  drivers, constructors, races, results, standings, circuits, seasons from
-  1950-present, or any other data in the currently selected database), you
+- For questions that require looking up structured data (e.g. any data in
+  the currently selected database, including Formula 1 drivers, constructors,
+  races, results, standings, circuits, or seasons from 1950-present), you
   MUST use the database tools instead of web_search or memory. Call
   database_schema first if you don't already know the exact table/column
   names, then query_database with a single SELECT statement.
@@ -58,7 +58,7 @@ Rules:
   Final Answer on that returned content. Do NOT claim no documents were
   found, and do NOT say the search returned nothing, if the Observation
   actually contains excerpts — treat that Observation as ground truth,
-  not your own prior guess about what the search might return.nly use tools when you actually need them; answer directly if you already know.
+  not your own prior guess about what the search might return.
 - Be concise and cite which source (document or web) your answer came from
   when relevant.
 - Give EXACTLY ONE of: an Action, OR a Final Answer. Never both in the same response.
@@ -105,6 +105,33 @@ def _strip_think(message):
     return cleaned
 
 
+def _clean_final_answer(text: str) -> str:
+    """
+    Strip leaked reasoning, scratchpad markers, or nudge text from a
+    final answer. The reasoning model sometimes continues its internal
+    monologue after writing 'Final Answer:', so we truncate at the first
+    scratchpad keyword and remove any nudge text that leaked in.
+    """
+    # Remove any stray <think> blocks that survived _strip_think
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    # Truncate at the first scratchpad keyword appearing on its own line
+    for marker in ["\nThought:", "\nAction:", "\nObservation:", "\nQuestion:"]:
+        idx = text.find(marker)
+        if idx != -1:
+            text = text[:idx]
+    # Remove nudge text if it leaked into the answer
+    for nudge in [
+        "Your last response was incomplete",
+        "Try again now, following the format exactly",
+    ]:
+        idx = text.find(nudge)
+        if idx != -1:
+            # Walk back to the start of that sentence
+            cut = text.rfind("\n", 0, idx)
+            text = text[: cut if cut != -1 else idx]
+    return text.strip()
+
+
 _FINAL_RE = re.compile(r"Final Answer:\s*(.*)", re.DOTALL)
 _ACTION_RE = re.compile(r"Action:\s*(.*?)\s*\nAction Input:\s*(.*)", re.DOTALL)
 
@@ -124,7 +151,7 @@ def _robust_parse(text: str, retries: int):
 
     final_match = _FINAL_RE.search(text)
     if final_match:
-        answer = final_match.group(1).strip()
+        answer = _clean_final_answer(final_match.group(1).strip())
         return AgentFinish(return_values={"output": answer}, log=text)
 
     action_match = _ACTION_RE.search(text)
