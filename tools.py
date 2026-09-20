@@ -16,6 +16,20 @@ from langchain_community.tools import DuckDuckGoSearchRun
 # Path to the F1DB SQLite database. Built into the Docker image at build
 # time (see Dockerfile) from https://github.com/f1db/f1db releases.
 F1DB_PATH = Path(os.environ.get("F1DB_SQLITE_PATH", "f1db/f1db.sqlite"))
+DATABASES_DIR = Path(__file__).parent / "databases"
+
+
+def list_databases() -> list[dict]:
+    """Lists all databases available to query: the built-in F1 database
+    plus any user-uploaded .sqlite/.db files in DATABASES_DIR."""
+    dbs = []
+    if F1DB_PATH.exists():
+        dbs.append({"id": "f1", "name": "Formula 1 Database", "path": str(F1DB_PATH)})
+    if DATABASES_DIR.exists():
+        for f in sorted(DATABASES_DIR.iterdir()):
+            if f.suffix.lower() in (".sqlite", ".db"):
+                dbs.append({"id": f.stem, "name": f.stem, "path": str(f)})
+    return dbs
 
 def _make_document_tool(vectorstore):
     retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
@@ -93,35 +107,33 @@ def get_current_date(_input: str = "") -> str:
     return datetime.now().strftime("%A, %B %d, %Y")
 
 
-def _f1_connect():
-    if not F1DB_PATH.exists():
-        raise FileNotFoundError(
-            f"F1 database not found at {F1DB_PATH}. It should be downloaded "
-            "into the image at build time - see the Dockerfile."
-        )
+def _db_connect(db_path: Path):
+    if not db_path.exists():
+        raise FileNotFoundError(f"Database not found at {db_path}.")
     # Read-only connection via URI mode: the agent can only ever read data,
     # never modify the database, no matter what SQL it's tricked into writing.
-    return sqlite3.connect(f"file:{F1DB_PATH}?mode=ro", uri=True)
+    return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
 
 
-def f1_schema(_input: str = "") -> str:
-    """Lists F1 database tables and their columns, so the agent knows what it can query."""
-    try:
-        conn = _f1_connect()
+def _make_schema_tool(db_path: Path, db_name: str):
+    def schema(_input: str = "") -> str:
         try:
-            cur = conn.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
-            tables = [row[0] for row in cur.fetchall()]
-            lines = []
-            for table in tables:
-                cur.execute(f"PRAGMA table_info('{table}')")
-                cols = [row[1] for row in cur.fetchall()]
-                lines.append(f"{table}({', '.join(cols)})")
-            return "\n".join(lines)
-        finally:
-            conn.close()
-    except Exception as e:
-        return f"Could not read F1 database schema: {e}"
+            conn = _db_connect(db_path)
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+                tables = [row[0] for row in cur.fetchall()]
+                lines = []
+                for table in tables:
+                    cur.execute(f"PRAGMA table_info('{table}')")
+                    cols = [row[1] for row in cur.fetchall()]
+                    lines.append(f"{table}({', '.join(cols)})")
+                return "\n".join(lines)
+            finally:
+                conn.close()
+        except Exception as e:
+            return f"Could not read {db_name} schema: {e}"
+    return schema
 
 
 _DISALLOWED_SQL_RE = re.compile(
@@ -129,34 +141,35 @@ _DISALLOWED_SQL_RE = re.compile(
 )
 
 
-def query_f1_database(query: str) -> str:
-    """Runs a read-only SQL SELECT query against the F1 database and returns the rows."""
-    stripped = query.strip().rstrip(";")
-    if not stripped.lower().startswith("select"):
-        return "Only SELECT queries are allowed."
-    if _DISALLOWED_SQL_RE.search(stripped):
-        return "Query contains a disallowed keyword. Only read-only SELECT queries are allowed."
-    if "limit" not in stripped.lower():
-        stripped += " LIMIT 50"
-    try:
-        conn = _f1_connect()
+def _make_query_tool(db_path: Path, db_name: str):
+    def query(query: str) -> str:
+        stripped = query.strip().rstrip(";")
+        if not stripped.lower().startswith("select"):
+            return "Only SELECT queries are allowed."
+        if _DISALLOWED_SQL_RE.search(stripped):
+            return "Query contains a disallowed keyword. Only read-only SELECT queries are allowed."
+        if "limit" not in stripped.lower():
+            stripped += " LIMIT 50"
         try:
-            cur = conn.cursor()
-            cur.execute(stripped)
-            columns = [d[0] for d in cur.description] if cur.description else []
-            rows = cur.fetchall()
-            if not rows:
-                return "Query returned no rows."
-            lines = [", ".join(columns)]
-            lines += [", ".join(str(v) for v in row) for row in rows]
-            return "\n".join(lines)
-        finally:
-            conn.close()
-    except Exception as e:
-        return f"SQL error: {e}"
+            conn = _db_connect(db_path)
+            try:
+                cur = conn.cursor()
+                cur.execute(stripped)
+                columns = [d[0] for d in cur.description] if cur.description else []
+                rows = cur.fetchall()
+                if not rows:
+                    return "Query returned no rows."
+                lines = [", ".join(columns)]
+                lines += [", ".join(str(v) for v in row) for row in rows]
+                return "\n".join(lines)
+            finally:
+                conn.close()
+        except Exception as e:
+            return f"SQL error: {e}"
+    return query
 
 
-def get_tools(vectorstore=None):
+def get_tools(vectorstore=None, db_id: str = "f1"):
     tools = []
     if vectorstore is not None:
         tools.append(_make_document_tool(vectorstore))
@@ -184,24 +197,30 @@ def get_tools(vectorstore=None):
             "Examples: '23 * 47 + 1', '12% of 500'."
         ),
     ))
-    tools.append(Tool(
-        name="f1_database_schema",
-        func=f1_schema,
-        description=(
-            "Use this FIRST, before query_f1_database, whenever you don't already "
-            "know the exact table/column names you need. Returns the list of "
-            "tables and columns in the Formula 1 database. Input is ignored."
-        ),
-    ))
-    tools.append(Tool(
-        name="query_f1_database",
-        func=query_f1_database,
-        description=(
-            "Use this to answer questions about Formula 1 drivers, constructors, "
-            "races, results, standings, circuits, or seasons (1950-present). "
-            "Input must be a single read-only SQL SELECT statement against the "
-            "F1 database. Call f1_database_schema first if you're unsure of the "
-            "table/column names."
-        ),
-    ))
+
+    available = {db["id"]: db for db in list_databases()}
+    selected = available.get(db_id) or available.get("f1")
+    if selected is not None:
+        db_path = Path(selected["path"])
+        db_name = selected["name"]
+        tools.append(Tool(
+            name="database_schema",
+            func=_make_schema_tool(db_path, db_name),
+            description=(
+                f"Use this FIRST, before query_database, whenever you don't "
+                f"already know the exact table/column names you need. Returns "
+                f"the list of tables and columns in the currently selected "
+                f"database ({db_name}). Input is ignored."
+            ),
+        ))
+        tools.append(Tool(
+            name="query_database",
+            func=_make_query_tool(db_path, db_name),
+            description=(
+                f"Use this to answer questions that require querying the "
+                f"currently selected database ({db_name}). Input must be a "
+                f"single read-only SQL SELECT statement. Call database_schema "
+                f"first if you're unsure of the table/column names."
+            ),
+        ))
     return tools
